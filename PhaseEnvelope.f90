@@ -47,15 +47,19 @@ program main
   
   read(input_num,*) comp
   
-  allocate(b(comp),ac(comp))
-  allocate(a(comp),Tc(comp))
-  allocate(Pc(comp),acentric(comp))
-  allocate(Var(comp+2),Composition(2,comp))
-  allocate(sensitivity(comp+2),F(comp+2))
-  allocate(dF((comp+2)*(comp+2)),step(comp+2))
-  allocate(dfdS(comp+2),K(comp))
-  allocate(z(comp),kij(comp,comp),lij(comp,comp))
+  allocate(b(comp), ac(comp), a(comp), Tc(comp), Pc(comp), acentric(comp))
   
+  allocate(K(comp,9), Composition(comp,10), z(comp), kij(comp,comp), lij(comp,comp))
+  
+  !defining variables maximum size supposing a maximum number of phases equal to 8
+  !Degrees of freedom = (F-1)*C + F + 1
+  allocate(dF((8*comp+8+1)*(8*comp+8+1)), step(8*comp+8+1), dfdS(8*comp+8+1), Var(8*comp+8+1), sensitivity(8*comp+8+1), F(8*comp+8+1))
+  
+  !     Independent Variables     !
+  ! (F-1)*C            K          !
+  !  (F-1)           beta         !
+  !   1           temperature     !
+  !   1            pressure       !
   
   !Reading And Calculating Properties********************************************************************************************
   aux = 0.0d0
@@ -73,9 +77,6 @@ program main
   kij = 0.d0
   lij = 0.d0
 
-  kij(1,2) = 0.09308d0
-  lij(1,2) = 0.08983d0
-
   kij(:,1) = kij(1,:)
   lij(:,1) = lij(1,:)
 
@@ -84,14 +85,14 @@ program main
   
   
   
-  !Initial Settings//////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  T = 300.0d0 !Initial Temperature Guess (K)
-  P = 0.5d0 !Initial Pressure (bar)
+  !Initial Settings - Dew point ///////////////////////////////////////////////////////////////////////////////////////////////////
+  T = 298.0d0 !Initial Temperature Guess (K)
+  P = 1.d0 !Initial Pressure (bar)
   
   do i = 1,comp
-    K(i) = 1.0d0/dexp(dlog(Pc(i)/P) + 5.373d0*(1.0d0 + Acentric(i))*(1.0d0 - Tc(i)/T)) !Whitson's Approach for Vapor-Liquid Equilibria
+    K(i,1) = 1.0d0/dexp(dlog(Pc(i)/P) + 5.373d0*(1.0d0 + Acentric(i))*(1.0d0 - Tc(i)/T)) !Whitson's Approach for Vapor-Liquid Equilibria
     z(i) = z(i)/aux !Normalizing Global Composition
-    Composition(1,i) = z(i) !Reference Phase Composition
+    Composition(i,1) = z(i) !Reference Phase Composition
   enddo
   
   phase(1) = 0 !Reference Phase Index (Vapor)
@@ -143,41 +144,41 @@ program main
       
       aux = 0.0d0
       do i = 1,comp
-        Composition(2,i) = Composition(1,i)*K(i) !Incipient Phase Composition
-        aux = aux + Composition(2,i)
+        Composition(i,2) = Composition(i,1)*K(i) !Incipient Phase Composition
+        aux = aux + Composition(i,2)
       enddo
       
       F(1) = -1.0d0
       dF(1) = 0.0d0
       
       do i = 1,comp
-        Composition(2,i) = Composition(2,i)/aux !Normalizing Composition
-        F(1) = F(1) + Composition(1,i)*K(i) !Residual
+        Composition(i,2) = Composition(i,2)/aux !Normalizing Composition
+        F(1) = F(1) + Composition(i,1)*K(i) !Residual
       enddo
       
       !Numerical Derivative With Respect to Temperature
       T = T_old + diff
       call EoS_param(acentric,Tc,ac,a,T,comp) !Updating Attractive Parameter
-      call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-      call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+      call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+      call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
       call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), 0)
       call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), 1)
       do i = 1,comp
-        call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-        call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
-        dF(1) = dF(1) + Composition(1,i)*K(i)*(FugCoef_ref - FugCoef_aux)
+        call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+        call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
+        dF(1) = dF(1) + Composition(i,1)*K(i)*(FugCoef_ref - FugCoef_aux)
       enddo
       
       T = T_old - diff
       call EoS_param(acentric,Tc,ac,a,T,comp) !Updating Attractive Parameter
-      call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-      call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+      call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+      call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
       call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), 0)
       call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), 1)
       do i = 1,comp
-        call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-        call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
-        dF(1) = dF(1) - Composition(1,i)*K(i)*(FugCoef_ref - FugCoef_aux)
+        call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+        call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
+        dF(1) = dF(1) - Composition(i,1)*K(i)*(FugCoef_ref - FugCoef_aux)
       enddo
     
       dF(1) = dF(1)/(2.0d0*diff)
@@ -194,13 +195,13 @@ program main
       
       !Updating K-factors
       call EoS_param(acentric,Tc,ac,a,T,comp)
-      call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-      call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+      call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+      call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
       call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), 0)
       call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), 1)
       do i = 1,comp
-        call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-        call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+        call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+        call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
         K(i) = dexp(FugCoef_ref - FugCoef_aux)
       enddo
   enddo
@@ -249,18 +250,18 @@ program main
           
           !Calculating Residuals/////////////////////////////////////////////////////////////////////////////////////////////////
           call EoS_param(acentric,Tc,ac,a,T,comp)
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
           call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), phase(1))
           call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
           F(comp+1) = 0.0d0
           do i = 1,comp
-            call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-            call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+            call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+            call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
             !Residual Responsible For The Chemical Equilibrium
             F(i) = Var(i) + (FugCoef_aux - FugCoef_ref)
             !Residual Responsible For Assuring That The Summation Of The Incipient Phase Equals 1
-            F(comp+1) = F(comp+1) + Composition(2,i) - Composition(1,i)
+            F(comp+1) = F(comp+1) + Composition(i,2) - Composition(i,1)
           enddo
           !Residual Responsible For Determining The Specified Independent Variable
           F(comp+2) = Var(SpecVar) - S
@@ -271,25 +272,25 @@ program main
           !Differentiating The First "C" Residuals With Respect to ln[K(j)]******************************************************
           do i = 1,comp
               do j = 1,comp
-                  diffFrac = diff*Composition(2,j)
+                  diffFrac = diff*Composition(j,2)
                   
-                  aux = Composition(2,j)
+                  aux = Composition(j,2)
                   !Numerically Differentiating the Fugacity Coefficient of the Incipient Phase
-                  Composition(2,j) = aux + diffFrac
-                  call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+                  Composition(j,2) = aux + diffFrac
+                  call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
                   call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
-                  call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+                  call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
                   dF((i-1)*(comp+2)+j) = FugCoef_aux
                   
-                  Composition(2,j) = aux - diffFrac
-                  call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+                  Composition(j,2) = aux - diffFrac
+                  call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
                   call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
-                  call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+                  call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
                   dF((i-1)*(comp+2)+j) = dF((i-1)*(comp+2)+j) - FugCoef_aux
                   
-                  Composition(2,j) = aux
+                  Composition(j,2) = aux
                   !Derivative of ln[FugacityCoefficient(IncipientPhase,Component i)] With Respect to ln[K(j)]
-                  dF((i-1)*(comp+2)+j) = dF((i-1)*(comp+2)+j)*Composition(2,j)/(2.0d0*diffFrac)
+                  dF((i-1)*(comp+2)+j) = dF((i-1)*(comp+2)+j)*Composition(j,2)/(2.0d0*diffFrac)
                   
                   !Derivative of ln[K(i)] With Respect to ln[K(j)] = Kronecker Delta
                   if(i .eq. j) dF((i-1)*(comp+2)+j) = dF((i-1)*(comp+2)+j) + 1.0d0
@@ -301,7 +302,7 @@ program main
           
           !Differentiating "C+1" Residual With Respect to ln[K(i)]///////////////////////////////////////////////////////////////
           do i = 1,comp
-             dF(comp*(comp+2)+i) = Composition(2,i)
+             dF(comp*(comp+2)+i) = Composition(i,2)
           enddo
           !//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
           
@@ -313,25 +314,25 @@ program main
           !Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
           T = dexp(Var(comp+1) + diffT)
           call EoS_param(acentric,Tc,ac,a,T,comp)
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
           call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), phase(1))
           call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
           do i = 1,comp
-              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
              dF((i-1)*(comp+2)+comp+1) = FugCoef_aux - FugCoef_ref
           enddo
           
           T = dexp(Var(comp+1) - diffT)
           call EoS_param(acentric,Tc,ac,a,T,comp)
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
           call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), phase(1))
           call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
           do i = 1,comp
-              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
              dF((i-1)*(comp+2)+comp+1) = dF((i-1)*(comp+2)+comp+1) - (FugCoef_aux - FugCoef_ref)
           enddo
           
@@ -349,16 +350,16 @@ program main
           !Differentiating The First "C" Residuals With Respect to ln[P]/////////////////////////////////////////////////////////
           diffP = diff*Var(comp+2)
           
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(1,:),amix(1),bmix(1)) !Mixing Rule - Reference Phase
-          call VdW1fMIX (comp,a,b,kij,lij,Composition(2,:),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,1),amix(1),bmix(1)) !Mixing Rule - Reference Phase
+          call VdW1fMIX (comp,a,b,kij,lij,Composition(:,2),amix(2),bmix(2)) !Mixing Rule - Incipient Phase
           
           !Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
           P = dexp(Var(comp+2) + diffP)
           call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), phase(1))
           call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
           do i = 1,comp
-              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
              dF((i-1)*(comp+2)+comp+2) = FugCoef_aux - FugCoef_ref
           enddo
           
@@ -366,8 +367,8 @@ program main
           call EoS_Volume(P, T, bmix(1), amix(1), Volume(1), phase(1))
           call EoS_Volume(P, T, bmix(2), amix(2), Volume(2), phase(2))
           do i = 1,comp
-              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(1,:),kij(i,:),lij(i,:),i)
-              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(2,:),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(1),bmix(1),FugCoef_ref,Volume(1),Composition(:,1),kij(i,:),lij(i,:),i)
+              call fugacity(comp,T,P,a,b,amix(2),bmix(2),FugCoef_aux,Volume(2),Composition(:,2),kij(i,:),lij(i,:),i)
              dF((i-1)*(comp+2)+comp+2) = dF((i-1)*(comp+2)+comp+2) - (FugCoef_aux - FugCoef_ref)
           enddo
           
@@ -424,7 +425,7 @@ program main
           !Calculating The Natural Form Of Independent Variables And Updating Compositions Of The Incipient Phase////////////////
           do i = 1,comp
               K(i) = dexp(Var(i))
-              Composition(2,i) = Composition(1,i)*K(i)
+              Composition(i,2) = Composition(i,1)*K(i)
           enddo
           T = dexp(Var(comp+1))
           P = dexp(Var(comp+2))
@@ -448,7 +449,7 @@ program main
       if(flag_error .eq. 0) then
           if(flag_crit .eq. 2) flag_crit = 0
 
-          write(output_num,*) legend_ELV(phase(2)+1),",",P,",",T,",",(Composition(2,i),",",i=1,comp)
+          write(output_num,*) legend_ELV(phase(2)+1),",",P,",",T,",",(Composition(i,2),",",i=1,comp)
           write(output_num2,*) T, P
           
           !Analyzing Sensitivity Of The Independent Variables************************************************************************
@@ -600,7 +601,7 @@ print*, Var(maxK_i)
 
       do i = 1,comp
           K(i) = dexp(Var(i))
-          Composition(2,i) = Composition(1,i)*K(i)
+          Composition(i,2) = Composition(i,1)*K(i)
       enddo
       T = dexp(Var(comp+1))
       P = dexp(Var(comp+2))
